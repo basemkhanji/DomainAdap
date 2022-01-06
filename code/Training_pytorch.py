@@ -128,9 +128,9 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-5, patience=5)
 
-    all_tl = []
-    all_vl = []
-    all_ac = []
+    all_train_loss = []
+    all_test_loss = []
+    all_test_acc = []
 
     mypreds = np.zeros((len(test_tags), 1))
 
@@ -157,7 +157,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             trainloss += loss.detach().cpu().numpy()
 
         # averaged trainloss of epoch
-        all_tl.append(trainloss / (batch_idx + 1))
+        all_train_loss.append(trainloss / (batch_idx + 1))
         trainloss = 0
 
         model.eval()
@@ -182,8 +182,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             test_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
 
         acc = np.mean((mypreds > 0.5) == test_tags_np)
-        all_vl.append(test_loss / (batch_idx + 1))
-        all_ac.append(acc)
+        all_test_loss.append(test_loss / (batch_idx + 1))
+        all_test_acc.append(acc)
 
         scheduler.step(test_loss / (batch_idx + 1))
 
@@ -193,8 +193,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         )
 
     print("Training complete")
-    print(f"Minimum training loss: {min(all_vl):.5f} in epoch: {np.argmin(all_vl)}")
-    print(f"Maximum training ACC:  {max(all_ac):.5f} in epoch: {np.argmax(all_ac)}")
+    print(f"Minimum MC testing loss: {min(all_test_loss):.5f} in epoch: {np.argmin(all_test_loss)}")
+    print(f"Maximum MC testing ACC:  {max(all_test_acc):.5f} in epoch: {np.argmax(all_test_acc)}")
 
     # done training so let's set it to eval
     model.eval()
@@ -215,8 +215,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     matplotlib.rcParams.update({"font.size": 22})
 
     plt.figure(figsize=(16, 9))
-    plt.plot(all_tl, label="Train Loss")
-    plt.plot(all_vl, label="Validation Loss")
+    plt.plot(all_train_loss, label="Training Loss")
+    plt.plot(all_test_loss, label="Validation Loss")
     plt.legend()
     plt.xlabel("Epoch")
     plt.ylim(0.6, 0.8)
