@@ -161,7 +161,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         trainloss = 0
 
         model.eval()
-        valloss = 0
+        test_loss = 0 # validation loss on source domain (= MC) data
         for batch_idx, (beg, end) in enumerate(test_borders):
 
             data = test_feat[beg:end]
@@ -179,16 +179,16 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
                 output = model(data, idx)
 
             mypreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
-            valloss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
+            test_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
 
         acc = np.mean((mypreds > 0.5) == test_tags_np)
-        all_vl.append(valloss / (batch_idx + 1))
+        all_vl.append(test_loss / (batch_idx + 1))
         all_ac.append(acc)
 
-        scheduler.step(valloss / (batch_idx + 1))
+        scheduler.step(test_loss / (batch_idx + 1))
 
         print(
-            f"Epoch: {epoch}/{n_epochs} | Val loss {valloss/(batch_idx+1):.5f} | AUC: {roc_auc_score(test_tags_np, mypreds):.5f} | ACC: {acc:.5f}",
+            f"Epoch: {epoch}/{n_epochs} | MC testing loss {test_loss/(batch_idx+1):.5f} | MC testing AUC: {roc_auc_score(test_tags_np, mypreds):.5f} | MC testing ACC: {acc:.5f}",
             end="\r",
         )
 
