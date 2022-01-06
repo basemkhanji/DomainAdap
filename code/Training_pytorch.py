@@ -29,7 +29,14 @@ def write_epm_file(preds, truth, epm_fname):
         t["eta"].newbasket(eta)
 
 
-def train_model(files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output):
+# logging utilities: pretty-printing of shapes and tag frequencies
+def format_shapes(features, tags, idx, borders):
+    return f"features {tuple(features.size())} tags {tuple(tags.size())} idx {tuple(idx.size())} borders ({len(borders)},)"
+def format_tag_frequencies(tags):
+    return ', '.join(map(lambda x: f"{x[0]}({x[1]})", torch.stack(torch.unique(tags, return_counts=True)).type(torch.int).t()))
+
+
+def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output):
 
     print("Starting Training")
     # some torch setup
@@ -45,7 +52,6 @@ def train_model(files, model_out_name, scaler_out_name, n_epochs, train_frac, ba
     evt_borders = files[0]["evt_borders"]
     for f in files[1:]:
         evt_borders = np.concatenate((evt_borders, f["evt_borders"][1:] + evt_borders[-1]))
-
     assert evt_borders[-1] == len(features)
 
     # probnnmu has a bin at -1, for particles that don't have muon info
@@ -63,7 +69,6 @@ def train_model(files, model_out_name, scaler_out_name, n_epochs, train_frac, ba
         idx_vec[b:e] = i
 
     evt_split = int(len(borders) * train_frac)
-
     track_split = evt_borders[evt_split]
 
     train_tags = torch.tensor(tags[:evt_split], dtype=torch.float32).to(device)
@@ -80,6 +85,44 @@ def train_model(files, model_out_name, scaler_out_name, n_epochs, train_frac, ba
         (x[0, 0], x[-1, 1])
         for x in np.array_split(borders[evt_split:] - borders[evt_split][0], len(borders[evt_split:]) // batch_size)
     ]
+
+
+
+    # UDA: process the validation_files equivalently; use "B_ID" instead of "B_TRUEID" and do not split
+    if validation_files:
+        val_features = np.concatenate([f["features"] for f in validation_files])
+        val_tags = np.concatenate([f["B_ID"] for f in validation_files]).reshape((-1, 1))
+        val_tags = np.where(val_tags == 521, 1, 0).astype(np.int32)
+
+        val_evt_borders = validation_files[0]["evt_borders"]
+        for f in validation_files[1:]:
+            val_evt_borders = np.concatenate((val_evt_borders, f["evt_borders"][1:] + val_evt_borders[-1]))
+        assert val_evt_borders[-1] == len(val_features)
+
+        val_features[val_features[:, 3] == -1, 3] = 0 # probnnmu (see above)
+        val_features = scaler.transform(val_features)
+
+        val_borders = np.array(list(zip(evt_borders[:-1], evt_borders[1:])))
+        val_idx_vec = np.zeros(len(features), dtype=np.int64)
+        for i, (b, e) in enumerate(val_borders):
+            val_idx_vec[b:e] = i
+
+        val_tags = torch.tensor(val_tags, dtype=torch.float32).to(device)
+        val_feat = torch.tensor(val_features).to(device)
+        val_idx = torch.tensor(val_idx_vec).to(device)
+        val_borders = [(x[0, 0], x[-1, 1]) for x in np.array_split(val_borders, len(val_borders) // batch_size)]
+
+        print(
+            f"MC training shapes: {format_shapes(train_feat, train_tags, train_idx, train_borders)}",
+            f"MC testing shapes: {format_shapes(test_feat, test_tags, test_idx, test_borders)}",
+            f"Data shapes: {format_shapes(val_feat, val_tags, val_idx, val_borders)}",
+            f"MC training tag frequencies: {format_tag_frequencies(train_tags)}",
+            f"MC testing tag frequencies: {format_tag_frequencies(test_tags)}",
+            f"Data tag frequencies: {format_tag_frequencies(val_tags)}",
+            sep="\n"
+        ) # log some general statistics about the data sources
+
+
 
     model = BaselineModel().to(device)
     optimizer = torch.optim.Adam(model.parameters())
@@ -197,6 +240,7 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser(description="Train Model for Flavour Tagging.")
     parser.add_argument("filenames", nargs="+", help="Files that contain training data. *.npz files expected)")
+    parser.add_argument("-validate", nargs="+", help="Files that contain validation data of the target domain")
     parser.add_argument(
         "-model-out-name",
         default="model",
@@ -220,10 +264,11 @@ if __name__ == "__main__":
     args = parser.parse_args()
 
     files = [np.load(f) for f in args.filenames]
+    validation_files = [np.load(f) for f in args.validate] if args.validate else None
 
     if args.scaler_out_name == None:
         args.scaler_out_name = args.model_out_name + "_scaler"
 
     train_model(
-        files, args.model_out_name, args.scaler_out_name, args.n_epochs, args.train_frac, args.batch_size, args.make_epm_output
+        files, validation_files, args.model_out_name, args.scaler_out_name, args.n_epochs, args.train_frac, args.batch_size, args.make_epm_output
     )
