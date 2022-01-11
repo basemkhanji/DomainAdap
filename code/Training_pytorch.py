@@ -238,7 +238,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             val_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
         val_acc = np.mean((valpreds > 0.5) == val_test_tags_np)
         all_val_loss.append(val_loss / (val_batch_idx + 1))
-        all_val_acc.append(test_acc)
+        all_val_acc.append(val_acc)
 
 
 
