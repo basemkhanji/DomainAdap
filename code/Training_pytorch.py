@@ -304,7 +304,7 @@ if __name__ == "__main__":
         default=None,
         help="File name to save scaler into. Default is MODELNAME_scaler.bin",
     )
-    parser.add_argument("-epochs", dest="n_epochs", default=200, type=int, help="Batch size")
+    parser.add_argument("-epochs", dest="n_epochs", default=100, type=int, help="Batch size")
     parser.add_argument(
         "-train-frac",
         default=0.75,
