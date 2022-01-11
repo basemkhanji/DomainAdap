@@ -167,6 +167,11 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         shuffle = True,
         batch_size = None
     )
+    val_train_dl = DataLoader(
+        TensorDataset(torch.tensor(val_train_borders, dtype=torch.int)),
+        shuffle = True,
+        batch_size = None
+    )
 
 
 
@@ -178,8 +183,9 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         p = float(epoch) / n_epochs
         alpha = 2. / (1. + np.exp(-gamma * p)) - 1
 
-        for batch_idx, batch_border in enumerate(train_dl):
+        for batch_idx, (batch_border, val_batch_border) in enumerate(zip(train_dl, val_train_dl)):
             beg, end = batch_border[0].numpy() # unpack the borders from train_dl
+            val_beg, val_end = val_batch_border[0].numpy()
             optimizer.zero_grad()
 
             data = train_feat[beg:end]
@@ -192,10 +198,27 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             output, uda_output = model(data, idx, alpha)
             loss = nn.functional.binary_cross_entropy_with_logits(output, target)
 
+
+
+            # UDA: feed the real data into the model
+            data = val_train_feat[val_beg:val_end]
+            idx = val_train_idx[val_beg:val_end] - val_train_idx[val_beg]
+            _, val_uda_output = model(data, idx, alpha)
+
+            # UDA: add the domain loss
+            loss += nn.functional.binary_cross_entropy_with_logits(
+                uda_output,
+                torch.zeros_like(uda_output) # expect zeros
+            ) * dc_weight / 2
+            loss += nn.functional.binary_cross_entropy_with_logits(
+                val_uda_output,
+                torch.ones_like(val_uda_output) # expect ones
+            ) * dc_weight / 2
+
+
+
             loss.backward()
-
             optimizer.step()
-
             trainloss += loss.detach().cpu().numpy()
 
         # averaged trainloss of epoch
