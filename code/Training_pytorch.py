@@ -80,7 +80,10 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     test_feat = torch.tensor(features[track_split:]).to(device)
     test_idx = torch.tensor(idx_vec[track_split:]).to(device)
 
-    train_borders = [(x[0, 0], x[-1, 1]) for x in np.array_split(borders[:evt_split], len(borders[:evt_split]) // batch_size)]
+    train_borders = [
+        (x[0, 0], x[-1, 1])
+        for x in np.array_split(borders[:evt_split], len(borders[:evt_split]) // batch_size)
+    ]
     test_borders = [
         (x[0, 0], x[-1, 1])
         for x in np.array_split(borders[evt_split:] - borders[evt_split][0], len(borders[evt_split:]) // batch_size)
@@ -90,8 +93,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
     # UDA: process the validation_files equivalently; use "B_ID" instead of "B_TRUEID" and do not split
     val_features = np.concatenate([f["features"] for f in validation_files])
-    val_tags_np = np.concatenate([f["B_ID"] for f in validation_files]).reshape((-1, 1))
-    val_tags_np = np.where(val_tags_np == 521, 1, 0).astype(np.int32)
+    val_tags = np.concatenate([f["B_ID"] for f in validation_files]).reshape((-1, 1))
+    val_tags = np.where(val_tags == 521, 1, 0).astype(np.int32)
 
     val_evt_borders = validation_files[0]["evt_borders"]
     for f in validation_files[1:]:
@@ -106,18 +109,36 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     for i, (b, e) in enumerate(val_borders):
         val_idx_vec[b:e] = i
 
-    val_tags = torch.tensor(val_tags_np, dtype=torch.float32).to(device)
-    val_feat = torch.tensor(val_features).to(device)
-    val_idx = torch.tensor(val_idx_vec).to(device)
-    val_borders = [(x[0, 0], x[-1, 1]) for x in np.array_split(val_borders, len(val_borders) // batch_size)]
+    val_evt_split = int(len(val_borders) * train_frac)
+    val_track_split = val_evt_borders[val_evt_split]
+
+    val_train_tags = torch.tensor(val_tags[:val_evt_split], dtype=torch.float32).to(device)
+    val_train_feat = torch.tensor(val_features[:val_track_split]).to(device)
+    val_train_idx = torch.tensor(val_idx_vec[:val_track_split]).to(device)
+
+    val_test_tags_np = val_tags[val_evt_split:]
+    val_test_tags = torch.tensor(val_test_tags_np, dtype=torch.float32).to(device)
+    val_test_feat = torch.tensor(val_features[val_track_split:]).to(device)
+    val_test_idx = torch.tensor(val_idx_vec[val_track_split:]).to(device)
+
+    val_train_borders = [
+        (x[0, 0], x[-1, 1])
+        for x in np.array_split(val_borders[:val_evt_split], len(val_borders[:val_evt_split]) // batch_size)
+    ]
+    val_test_borders = [
+        (x[0, 0], x[-1, 1])
+        for x in np.array_split(val_borders[val_evt_split:] - val_borders[val_evt_split][0], len(val_borders[val_evt_split:]) // batch_size)
+    ]
 
     print(
         f"MC training shapes: {format_shapes(train_feat, train_tags, train_idx, train_borders)}",
         f"MC testing shapes: {format_shapes(test_feat, test_tags, test_idx, test_borders)}",
-        f"Data shapes: {format_shapes(val_feat, val_tags, val_idx, val_borders)}",
+        f"Data training shapes: {format_shapes(val_train_feat, val_train_tags, val_train_idx, val_train_borders)}",
+        f"Data testing shapes: {format_shapes(val_test_feat, val_test_tags, val_test_idx, val_test_borders)}",
         f"MC training tag frequencies: {format_tag_frequencies(train_tags)}",
         f"MC testing tag frequencies: {format_tag_frequencies(test_tags)}",
-        f"Data tag frequencies: {format_tag_frequencies(val_tags)}",
+        f"Data training tag frequencies: {format_tag_frequencies(val_train_tags)}",
+        f"Data testing tag frequencies: {format_tag_frequencies(val_test_tags)}",
         sep="\n"
     ) # log some general statistics about the data sources
 
@@ -135,7 +156,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
     all_val_loss = []
     all_val_acc = []
-    valpreds = np.zeros((len(val_tags), 1))
+    valpreds = np.zeros((len(val_test_tags), 1))
 
     for epoch in range(n_epochs):
         model.train()
@@ -192,17 +213,17 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
         # process the validation_files equivalently
         val_loss = 0 # validation loss on target domain (= real) data
-        for val_batch_idx, (beg, end) in enumerate(val_borders):
-            data = val_feat[beg:end]
-            idx = val_idx[beg:end] - val_idx[beg]
-            e_beg, e_end = val_idx[[beg, end - 1]] - val_idx[0]
+        for val_batch_idx, (beg, end) in enumerate(val_test_borders):
+            data = val_test_feat[beg:end]
+            idx = val_test_idx[beg:end] - val_test_idx[beg]
+            e_beg, e_end = val_test_idx[[beg, end - 1]] - val_test_idx[0]
             e_end += 1
-            target = val_tags[e_beg:e_end]
+            target = val_test_tags[e_beg:e_end]
             with torch.no_grad():
                 output = model(data, idx)
             valpreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             val_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
-        val_acc = np.mean((valpreds > 0.5) == val_tags_np)
+        val_acc = np.mean((valpreds > 0.5) == val_test_tags_np)
         all_val_loss.append(val_loss / (val_batch_idx + 1))
         all_val_acc.append(test_acc)
 
@@ -212,7 +233,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
         print(
             f"Epoch: {epoch}/{n_epochs} | MC loss {test_loss/(batch_idx+1):.5f} | MC AUC: {roc_auc_score(test_tags_np, mypreds):.5f} | MC ACC: {test_acc:.5f}",
-            f"| data loss {val_loss/(val_batch_idx+1):.5f} | data AUC: {roc_auc_score(val_tags_np, valpreds):.5f} | data ACC: {val_acc:.5f}",
+            f"| data loss {val_loss/(val_batch_idx+1):.5f} | data AUC: {roc_auc_score(val_test_tags_np, valpreds):.5f} | data ACC: {val_acc:.5f}",
             end="\r",
         )
 
