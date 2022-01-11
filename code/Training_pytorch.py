@@ -9,6 +9,7 @@ import torch.nn as nn
 import joblib
 from sklearn.metrics import roc_auc_score
 from sklearn.preprocessing import RobustScaler
+from torch.utils.data import DataLoader, TensorDataset
 from model import BaselineModel
 
 
@@ -158,10 +159,22 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     all_val_acc = []
     valpreds = np.zeros((len(val_test_tags), 1))
 
+
+
+    # torch data loaders reshuffle the data in each epoch
+    train_dl = DataLoader(
+        TensorDataset(torch.tensor(train_borders, dtype=torch.int)),
+        shuffle = True,
+        batch_size = None
+    )
+
+
+
     for epoch in range(n_epochs):
         model.train()
         trainloss = 0
-        for batch_idx, (beg, end) in enumerate(train_borders):
+        for batch_idx, batch_border in enumerate(train_dl):
+            beg, end = batch_border[0].numpy() # unpack the borders from train_dl
             optimizer.zero_grad()
 
             data = train_feat[beg:end]
