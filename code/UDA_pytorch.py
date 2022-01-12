@@ -242,7 +242,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
         # averaged trainloss of epoch
         all_train_loss.append(trainloss / (batch_idx + 1))
-        all_train_domain_loss.append((fullloss - trainloss) / (batch_idx + 1))
+        all_train_domain_loss.append((fullloss - trainloss) / (batch_idx + 1) / dc_weight)
 
         model.eval()
         test_loss = 0 # validation loss on source domain (= MC) data
