@@ -159,6 +159,9 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     all_val_acc = []
     valpreds = np.zeros((len(val_test_tags), 1))
 
+    all_train_domain_loss = []
+    all_test_domain_loss = []
+
 
 
     # torch data loaders reshuffle the data in each epoch
@@ -178,6 +181,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     for epoch in range(n_epochs):
         model.train()
         trainloss = 0
+        fullloss = 0
 
         # progress and alpha value for the Gradient Reversal Layer
         p = float(epoch) / n_epochs
@@ -197,6 +201,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
             output, uda_output = model(data, idx, alpha)
             loss = nn.functional.binary_cross_entropy_with_logits(output, target)
+            trainloss += loss.detach().cpu().numpy()
 
 
 
@@ -214,19 +219,20 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
                 val_uda_output,
                 torch.ones_like(val_uda_output) # expect ones
             ) * dc_weight / 2
+            fullloss += loss.detach().cpu().numpy()
 
 
 
             loss.backward()
             optimizer.step()
-            trainloss += loss.detach().cpu().numpy()
 
         # averaged trainloss of epoch
         all_train_loss.append(trainloss / (batch_idx + 1))
-        trainloss = 0
+        all_train_domain_loss.append((fullloss - trainloss) / (batch_idx + 1))
 
         model.eval()
         test_loss = 0 # validation loss on source domain (= MC) data
+        domain_loss = 0 # validation loss of the domain classifier
         for batch_idx, (beg, end) in enumerate(test_borders):
 
             data = test_feat[beg:end]
@@ -245,6 +251,10 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
             mypreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             test_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
+            domain_loss += nn.functional.binary_cross_entropy_with_logits(
+                uda_output,
+                torch.zeros_like(uda_output) # expect zeros
+            ).detach().cpu().numpy()
 
         test_acc = np.mean((mypreds > 0.5) == test_tags_np)
         all_test_loss.append(test_loss / (batch_idx + 1))
@@ -264,9 +274,14 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
                 output, uda_output = model(data, idx, alpha)
             valpreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             val_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
+            domain_loss += nn.functional.binary_cross_entropy_with_logits(
+                uda_output,
+                torch.ones_like(uda_output) # expect ones
+            ).detach().cpu().numpy()
         val_acc = np.mean((valpreds > 0.5) == val_test_tags_np)
         all_val_loss.append(val_loss / (val_batch_idx + 1))
         all_val_acc.append(val_acc)
+        all_test_domain_loss.append(domain_loss / (len(test_borders) + len(val_test_borders)))
 
 
 
@@ -306,6 +321,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     plt.plot(all_train_loss, label="MC training loss")
     plt.plot(all_test_loss, label="MC validation loss")
     plt.plot(all_val_loss, label="data validation loss")
+    plt.plot(all_train_domain_loss, label="domain training loss", linestyle="dashed")
+    plt.plot(all_test_domain_loss, label="domain validation loss", linestyle="dashed")
     plt.legend()
     plt.xlabel("Epoch")
     plt.ylim(0.6, 0.8)
