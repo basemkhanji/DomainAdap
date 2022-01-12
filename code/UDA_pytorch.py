@@ -312,6 +312,15 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     plt.grid()
     plt.savefig("uda_Loss_vs_Epoch.png")
 
+    plt.figure(figsize=(16, 9))
+    plt.plot(all_test_acc, label="MC validation accuracy")
+    plt.plot(all_val_acc, label="data validation accuracy")
+    plt.legend()
+    plt.xlabel("Epoch")
+    plt.ylim(0.48, 0.64)
+    plt.grid()
+    plt.savefig("uda_Accuracy_vs_Epoch.png")
+
 
 def restricted_float(x):
     try:
@@ -345,7 +354,7 @@ if __name__ == "__main__":
         default=None,
         help="File name to save scaler into. Default is MODELNAME_scaler.bin",
     )
-    parser.add_argument("-epochs", dest="n_epochs", default=100, type=int, help="Batch size")
+    parser.add_argument("-epochs", dest="n_epochs", default=300, type=int, help="Batch size")
     parser.add_argument(
         "-train-frac",
         default=0.75,
