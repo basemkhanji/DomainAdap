@@ -36,8 +36,22 @@ def format_shapes(features, tags, idx, borders):
 def format_tag_frequencies(tags):
     return ', '.join(map(lambda x: f"{x[0]}({x[1]})", torch.stack(torch.unique(tags, return_counts=True)).type(torch.int).t()))
 
+# like itertools.cycle but reshuffling a DataLoader instance in each cycle
+class ShuffleCycle(object):
+    def __init__(self, dataloader):
+         self.dataloader = dataloader
+         self.iter = iter(self.dataloader)
+    def __iter__(self):
+         return self
+    def __next__(self):
+         try:
+                 return next(self.iter)
+         except StopIteration:
+                 self.iter = iter(self.dataloader)
+                 return next(self.iter)
 
-def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output, gamma=10, dc_weight=0.2, dc_warmup=3):
+
+def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output, gamma=10, dc_weight=0.2):
 
     print("Starting Training")
     # some torch setup
@@ -187,7 +201,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         p = float(epoch) / n_epochs
         alpha = 2. / (1. + np.exp(-gamma * p)) - 1
 
-        for batch_idx, (batch_border, val_batch_border) in enumerate(zip(train_dl, val_train_dl)):
+        for batch_idx, (batch_border, val_batch_border) in enumerate(zip(train_dl, ShuffleCycle(val_train_dl))):
             beg, end = batch_border[0].numpy() # unpack the borders from train_dl
             val_beg, val_end = val_batch_border[0].numpy()
             optimizer.zero_grad()
