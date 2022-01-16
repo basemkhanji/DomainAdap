@@ -174,7 +174,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     valpreds = np.zeros((len(val_test_tags), 1))
 
     all_train_domain_loss = []
-    all_test_domain_loss = []
+    all_testval_domain_loss = []
 
 
 
@@ -246,7 +246,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
         model.eval()
         test_loss = 0 # validation loss on source domain (= MC) data
-        domain_loss = 0 # validation loss of the domain classifier
+        test_domain_loss = 0 # validation loss of the domain classifier
         for batch_idx, (beg, end) in enumerate(test_borders):
 
             data = test_feat[beg:end]
@@ -265,19 +265,22 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
             mypreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             test_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
-            domain_loss += nn.functional.binary_cross_entropy_with_logits(
+            test_domain_loss += nn.functional.binary_cross_entropy_with_logits(
                 uda_output,
                 torch.zeros_like(uda_output) # expect zeros
             ).detach().cpu().numpy()
 
+        test_loss = test_loss / (batch_idx + 1)
+        test_domain_loss = test_domain_loss / (batch_idx + 1)
         test_acc = np.mean((mypreds > 0.5) == test_tags_np)
-        all_test_loss.append(test_loss / (batch_idx + 1))
+        all_test_loss.append(test_loss)
         all_test_acc.append(test_acc)
 
 
 
         # process the validation_files equivalently
         val_loss = 0 # validation loss on target domain (= real) data
+        val_domain_loss = 0
         for val_batch_idx, (beg, end) in enumerate(val_test_borders):
             data = val_test_feat[beg:end]
             idx = val_test_idx[beg:end] - val_test_idx[beg]
@@ -288,18 +291,23 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
                 output, uda_output = model(data, idx, alpha)
             valpreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             val_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
-            domain_loss += nn.functional.binary_cross_entropy_with_logits(
+            val_domain_loss += nn.functional.binary_cross_entropy_with_logits(
                 uda_output,
                 torch.ones_like(uda_output) # expect ones
             ).detach().cpu().numpy()
+
+        val_loss = val_loss / (val_batch_idx + 1)
+        val_domain_loss = val_domain_loss / (val_batch_idx + 1)
         val_acc = np.mean((valpreds > 0.5) == val_test_tags_np)
-        all_val_loss.append(val_loss / (val_batch_idx + 1))
+        all_val_loss.append(val_loss)
         all_val_acc.append(val_acc)
-        all_test_domain_loss.append(domain_loss / (len(test_borders) + len(val_test_borders)))
+        testval_domain_loss = (test_domain_loss + val_domain_loss) / 2
+        all_testval_domain_loss.append(testval_domain_loss)
 
 
 
-        scheduler.step(test_loss / (batch_idx + 1))
+        if alpha > 0.95:
+            scheduler.step(test_loss - testval_domain_loss)
 
         print(
             f"Epoch: {epoch}/{n_epochs} | MC loss {test_loss/(batch_idx+1):.5f} | MC AUC: {roc_auc_score(test_tags_np, mypreds):.5f} | MC ACC: {test_acc:.5f}",
@@ -336,7 +344,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
     plt.plot(all_test_loss, label="MC validation loss")
     plt.plot(all_val_loss, label="data validation loss")
     plt.plot(all_train_domain_loss, label="domain training loss", linestyle="dashed")
-    plt.plot(all_test_domain_loss, label="domain validation loss", linestyle="dashed")
+    plt.plot(all_testval_domain_loss, label="domain validation loss", linestyle="dashed")
     plt.legend()
     plt.xlabel("Epoch")
     plt.ylim(0.6, 0.8)
@@ -385,7 +393,7 @@ if __name__ == "__main__":
         default=None,
         help="File name to save scaler into. Default is MODELNAME_scaler.bin",
     )
-    parser.add_argument("-epochs", dest="n_epochs", default=300, type=int, help="Batch size")
+    parser.add_argument("-epochs", dest="n_epochs", default=200, type=int, help="Batch size")
     parser.add_argument(
         "-train-frac",
         default=0.75,
