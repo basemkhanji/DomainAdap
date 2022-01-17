@@ -30,7 +30,6 @@ class UDAModel(nn.Module):
         self.l4 = nn.Linear(20, 1)
 
         # the additional domain classification head
-        self.uda_l3 = nn.Linear(self.latent_space_dim, 20)
         self.uda_l4 = nn.Linear(20, 1)
 
         if load_weights_path != None:
@@ -47,15 +46,15 @@ class UDAModel(nn.Module):
         x = torch.zeros(idx[-1] + 1, self.latent_space_dim).to(x.device)
         x.index_add_(0, idx, tmp)
 
-        # the additional domain classification head
-        x_uda = GradientReversalFunction.apply(x, alpha)
-        x_uda = self.uda_l3(x_uda)
-        x_uda = nn.functional.relu(x_uda)
-        x_uda = self.uda_l4(x_uda)
-
-        # the usual label prediction head
+        # the usual label prediction head (part 1)
         x = self.l3(x)
         x = nn.functional.relu(x)
+
+        # the additional domain classification head
+        x_uda = GradientReversalFunction.apply(x, alpha)
+        x_uda = self.uda_l4(x_uda)
+
+        # the usual label prediction head (part 2)
         x = self.l4(x)
         # note we don't apply sigmoid here since it's inside the loss function
         # remember this when using the output in classification
