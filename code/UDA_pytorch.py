@@ -51,7 +51,7 @@ class ShuffleCycle(object):
                  return next(self.iter)
 
 
-def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output, gamma=10, dc_weight=0.2):
+def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output, gamma=10, dc_weight=0.4):
 
     print("Starting Training")
     # some torch setup
