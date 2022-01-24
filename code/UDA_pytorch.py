@@ -31,8 +31,11 @@ def write_epm_file(preds, truth, epm_fname):
 
 
 # logging utilities: pretty-printing of shapes and tag frequencies
-def format_shapes(features, tags, idx, borders):
-    return f"features {tuple(features.size())} tags {tuple(tags.size())} idx {tuple(idx.size())} borders ({len(borders)},)"
+def format_shapes(features, tags, idx, borders, weights=None):
+    x = f"features {tuple(features.size())} tags {tuple(tags.size())} idx {tuple(idx.size())} borders ({len(borders)},)"
+    if weights != None:
+        x += f" weights {tuple(weights.size())}"
+    return x
 def format_tag_frequencies(tags):
     return ', '.join(map(lambda x: f"{x[0]}({x[1]})", torch.stack(torch.unique(tags, return_counts=True)).type(torch.int).t()))
 
@@ -145,11 +148,16 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         for x in np.array_split(val_borders[val_evt_split:] - val_borders[val_evt_split][0], len(val_borders[val_evt_split:]) // batch_size)
     ]
 
+    # UDA: validation_files have a weight column
+    val_weights = np.concatenate([f["sweight_s"] for f in validation_files]).reshape((-1, 1))
+    val_train_weights = torch.tensor(val_weights[:val_evt_split], dtype=torch.float32).to(device)
+    val_test_weights = torch.tensor(val_weights[val_evt_split:], dtype=torch.float32).to(device)
+
     print(
         f"MC training shapes: {format_shapes(train_feat, train_tags, train_idx, train_borders)}",
         f"MC testing shapes: {format_shapes(test_feat, test_tags, test_idx, test_borders)}",
-        f"Data training shapes: {format_shapes(val_train_feat, val_train_tags, val_train_idx, val_train_borders)}",
-        f"Data testing shapes: {format_shapes(val_test_feat, val_test_tags, val_test_idx, val_test_borders)}",
+        f"Data training shapes: {format_shapes(val_train_feat, val_train_tags, val_train_idx, val_train_borders, val_train_weights)}",
+        f"Data testing shapes: {format_shapes(val_test_feat, val_test_tags, val_test_idx, val_test_borders, val_test_weights)}",
         f"MC training tag frequencies: {format_tag_frequencies(train_tags)}",
         f"MC testing tag frequencies: {format_tag_frequencies(test_tags)}",
         f"Data training tag frequencies: {format_tag_frequencies(val_train_tags)}",
@@ -224,15 +232,20 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             idx = val_train_idx[val_beg:val_end] - val_train_idx[val_beg]
             _, val_uda_output = model(data, idx, alpha)
 
+            e_beg, e_end = val_train_idx[[val_beg, val_end - 1]]
+            e_end += 1
+            val_uda_weights = val_train_weights[e_beg:e_end]
+
             # UDA: add the domain loss
             loss += nn.functional.binary_cross_entropy_with_logits(
                 uda_output,
                 torch.zeros_like(uda_output) # expect zeros
             ) * dc_weight / 2
-            loss += nn.functional.binary_cross_entropy_with_logits(
+            loss += torch.mean(val_uda_weights * nn.functional.binary_cross_entropy_with_logits(
                 val_uda_output,
-                torch.ones_like(val_uda_output) # expect ones
-            ) * dc_weight / 2
+                torch.ones_like(val_uda_output), # expect ones
+                reduction = "none"
+            )) * dc_weight / 2
             fullloss += loss.detach().cpu().numpy()
 
 
