@@ -300,14 +300,16 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
             e_beg, e_end = val_test_idx[[beg, end - 1]] - val_test_idx[0]
             e_end += 1
             target = val_test_tags[e_beg:e_end]
+            val_uda_weights = val_test_weights[e_beg:e_end]
             with torch.no_grad():
                 output, uda_output = model(data, idx, alpha)
             valpreds[e_beg:e_end] = torch.sigmoid(output.detach()).cpu().numpy()
             val_loss += nn.functional.binary_cross_entropy_with_logits(output, target).detach().cpu().numpy()
-            val_domain_loss += nn.functional.binary_cross_entropy_with_logits(
+            val_domain_loss += torch.mean(val_uda_weights * nn.functional.binary_cross_entropy_with_logits(
                 uda_output,
-                torch.ones_like(uda_output) # expect ones
-            ).detach().cpu().numpy()
+                torch.ones_like(uda_output), # expect ones
+                reduction = "none"
+            )).detach().cpu().numpy()
 
         val_loss = val_loss / (val_batch_idx + 1)
         val_domain_loss = val_domain_loss / (val_batch_idx + 1)
