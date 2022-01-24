@@ -307,7 +307,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
 
         if alpha > 0.95:
-            scheduler.step(test_loss - testval_domain_loss)
+            scheduler.step(test_loss - dc_weight * testval_domain_loss)
 
         print(
             f"Epoch: {epoch}/{n_epochs} | MC loss {test_loss/(batch_idx+1):.5f} | MC AUC: {roc_auc_score(test_tags_np, mypreds):.5f} | MC ACC: {test_acc:.5f}",
