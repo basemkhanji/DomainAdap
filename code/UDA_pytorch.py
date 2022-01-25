@@ -354,17 +354,20 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
     matplotlib.rcParams.update({"font.size": 22})
 
-    plt.figure(figsize=(16, 9))
-    plt.plot(all_train_loss, label="MC training loss")
-    plt.plot(all_test_loss, label="MC validation loss")
-    plt.plot(all_val_loss, label="data validation loss")
-    plt.plot(all_train_domain_loss, label="domain training loss", linestyle="dashed")
-    plt.plot(all_testval_domain_loss, label="domain validation loss", linestyle="dashed")
-    plt.legend()
-    plt.xlabel("Epoch")
-    plt.ylim(0.6, 0.8)
-    plt.grid()
-    plt.savefig("uda_Loss_vs_Epoch.png")
+    fig, (ax_label, ax_domain) = plt.subplots(2, figsize=(16, 18), sharex=True)
+    ax_label.plot(all_train_loss, label="MC training")
+    ax_label.plot(all_test_loss, label="MC validation")
+    ax_label.plot(all_val_loss, label="data validation")
+    ax_label.set_ylim([0.6, 0.8])
+    ax_domain.plot(all_train_domain_loss, label="domain training")
+    ax_domain.plot(all_testval_domain_loss, label="domain validation")
+    ax_domain.set_ylim([0.4, 0.6])
+    ax_domain.set_xlabel("Epoch") # only label the lower axis due to sharex=True
+    for ax in [ax_label, ax_domain]:
+        ax.set_ylabel("Loss")
+        ax.legend()
+        ax.grid()
+    fig.savefig("uda_Loss_vs_Epoch.png")
 
     plt.figure(figsize=(16, 9))
     plt.plot(all_test_acc, label="MC validation accuracy")
