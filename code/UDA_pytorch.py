@@ -38,6 +38,8 @@ def format_shapes(features, tags, idx, borders, weights=None):
     return x
 def format_tag_frequencies(tags):
     return ', '.join(map(lambda x: f"{x[0]}({x[1]})", torch.stack(torch.unique(tags, return_counts=True)).type(torch.int).t()))
+def format_weights(w):
+    return f"mean {w.mean().item()} min {w.min().item()} max {w.max().item()} quartiles {w.cpu().quantile(torch.tensor([.25, .75])).numpy()}"
 
 # like itertools.cycle but reshuffling a DataLoader instance in each cycle
 class ShuffleCycle(object):
@@ -162,6 +164,8 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
         f"MC testing tag frequencies: {format_tag_frequencies(test_tags)}",
         f"Data training tag frequencies: {format_tag_frequencies(val_train_tags)}",
         f"Data testing tag frequencies: {format_tag_frequencies(val_test_tags)}",
+        f"Data training weights: {format_weights(val_train_weights)}",
+        f"Data testing weights: {format_weights(val_test_weights)}",
         sep="\n"
     ) # log some general statistics about the data sources
 
