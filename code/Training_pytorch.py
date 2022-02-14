@@ -37,7 +37,7 @@ def format_tag_frequencies(tags):
     return ', '.join(map(lambda x: f"{x[0]}({x[1]})", torch.stack(torch.unique(tags, return_counts=True)).type(torch.int).t()))
 
 
-def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, make_epm_output):
+def train_model(files, validation_files, model_out_name, scaler_out_name, n_epochs, train_frac, batch_size, bn, make_epm_output):
 
     print("Starting Training")
     # some torch setup
@@ -145,7 +145,7 @@ def train_model(files, validation_files, model_out_name, scaler_out_name, n_epoc
 
 
 
-    model = BaselineModel().to(device)
+    model = BaselineModel(bn=bn).to(device)
     optimizer = torch.optim.Adam(model.parameters())
     scheduler = torch.optim.lr_scheduler.ReduceLROnPlateau(optimizer, factor=0.5, min_lr=1e-5, patience=5)
 
@@ -334,6 +334,7 @@ if __name__ == "__main__":
         help="Fraction of data to use for training",
     )
     parser.add_argument("-batch-size", default=1000, type=int, help="Batch size")
+    parser.add_argument("--bn", action="store_true", help="Use batch normalization layers")
     parser.add_argument("--make-epm-output", action="store_false", help="Write tagged validataion data into root file for EPM")
 
     args = parser.parse_args()
@@ -345,5 +346,5 @@ if __name__ == "__main__":
         args.scaler_out_name = args.model_out_name + "_scaler"
 
     train_model(
-        files, validation_files, args.model_out_name, args.scaler_out_name, args.n_epochs, args.train_frac, args.batch_size, args.make_epm_output
+        files, validation_files, args.model_out_name, args.scaler_out_name, args.n_epochs, args.train_frac, args.batch_size, args.bn, args.make_epm_output
     )
